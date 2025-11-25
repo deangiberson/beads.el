@@ -108,6 +108,9 @@ Set to non-nil to automatically refresh every `beads-auto-refresh-interval' seco
 (defvar-local beads--cache-time nil
   "Time when issues cache was last updated.")
 
+(defvar-local beads--current-issue-id nil
+  "Current issue ID being displayed in this buffer (for detail views).")
+
 ;;; Utility Functions
 
 (defun beads--find-project-root ()
@@ -539,8 +542,12 @@ With prefix arg FORCE, clear cache before refreshing."
     (message "Not in a beads buffer"))))
 
 (defun beads--issue-at-point ()
-  "Get the issue ID at point."
-  (get-text-property (point) 'beads-issue-id))
+  "Get the issue ID at point.
+In detail buffers, returns the current issue ID.
+Otherwise, looks for the beads-issue-id text property."
+  (or (and (derived-mode-p 'beads-show-mode)
+           beads--current-issue-id)
+      (get-text-property (point) 'beads-issue-id)))
 
 (defun beads-show-issue (id)
   "Show details for issue ID."
@@ -554,6 +561,7 @@ With prefix arg FORCE, clear cache before refreshing."
             (with-current-buffer buf
               (beads-show-mode)
               (setq beads--current-project (beads--find-project-root))
+              (setq beads--current-issue-id id)
               (beads--render-detail-buffer issue))
             (pop-to-buffer buf))
         (message "Issue %s not found" id)))))
@@ -747,11 +755,12 @@ With prefix arg FORCE, clear cache before refreshing."
 (defun beads-close-issue ()
   "Close issue at point."
   (interactive)
-  (when-let* ((id (beads--issue-at-point)))
-    (let ((reason (read-string "Close reason: " "Completed")))
-      (beads--run-command (format "close %s --reason \"%s\"" id reason))
-      (message "Closed %s" id)
-      (beads-refresh))))
+  (if-let* ((id (beads--issue-at-point)))
+      (let ((reason (read-string "Close reason: " "Completed")))
+        (beads--run-command (format "close %s --reason \"%s\"" id reason))
+        (message "Closed %s" id)
+        (beads-refresh))
+    (user-error "No issue at point")))
 
 ;;; Mode Definitions
 
