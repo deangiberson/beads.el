@@ -533,7 +533,8 @@ With prefix arg FORCE, clear cache before refreshing."
     (beads--render-ready-buffer)
     (message "Refreshed ready work"))
    ((derived-mode-p 'beads-show-mode)
-    (when-let* ((id (get-text-property (point) 'beads-issue-id)))
+    (when-let* ((id (or beads--current-issue-id
+                        (get-text-property (point) 'beads-issue-id))))
       (let ((issue (beads--get-issue-by-id id)))
         (when issue
           (beads--render-detail-buffer issue)
