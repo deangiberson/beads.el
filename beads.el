@@ -731,26 +731,31 @@ Otherwise, looks for the beads-issue-id text property."
 
 (defun beads-set-status (status)
   "Set STATUS for issue at point."
-  (when-let* ((id (beads--issue-at-point)))
-    (beads--run-command (format "update %s --status %s" id status))
-    (message "Set %s to %s" id status)
-    (beads-refresh)))
+  (if-let* ((id (beads--issue-at-point)))
+      (progn
+        (beads--run-command (format "update %s --status %s" id status))
+        (message "Set %s to %s" id status)
+        (beads-refresh))
+    (user-error "No issue at point")))
 
 (defun beads-set-priority (priority)
   "Set PRIORITY for issue at point."
-  (when-let* ((id (beads--issue-at-point)))
-    (beads--run-command (format "update %s --priority %d" id priority))
-    (message "Set %s priority to P%d" id priority)
-    (beads-refresh)))
+  (if-let* ((id (beads--issue-at-point)))
+      (progn
+        (beads--run-command (format "update %s --priority %d" id priority))
+        (message "Set %s priority to P%d" id priority)
+        (beads-refresh))
+    (user-error "No issue at point")))
 
 (defun beads-change-assignee ()
   "Change assignee for issue at point."
   (interactive)
-  (when-let* ((id (beads--issue-at-point)))
-    (let ((assignee (read-string "Assignee: ")))
-      (beads--run-command (format "update %s --assignee %s" id assignee))
-      (message "Assigned %s to %s" id assignee)
-      (beads-refresh))))
+  (if-let* ((id (beads--issue-at-point)))
+      (let ((assignee (read-string "Assignee: ")))
+        (beads--run-command (format "update %s --assignee %s" id assignee))
+        (message "Assigned %s to %s" id assignee)
+        (beads-refresh))
+    (user-error "No issue at point")))
 
 (defun beads-close-issue ()
   "Close issue at point."
