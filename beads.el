@@ -51,6 +51,12 @@
   :type 'integer
   :group 'beads)
 
+(defcustom beads-ready-limit 50
+  "Maximum number of ready issues to fetch and display.
+Set to a large number to show all ready issues."
+  :type 'integer
+  :group 'beads)
+
 (defcustom beads-priority-faces
   '((0 . error)
     (1 . warning)
@@ -239,7 +245,7 @@ Returns nil and displays error message if parsing fails."
 
 (defun beads--get-ready-issues ()
   "Get ready work issues."
-  (let ((data (beads--run-json "ready")))
+  (let ((data (beads--run-json (format "ready --limit %d" beads-ready-limit))))
     (mapcar #'beads--parse-issue data)))
 
 (defun beads--get-issue-by-id (id)
@@ -255,11 +261,13 @@ Returns nil and displays error message if parsing fails."
   "Insert a visual separator line."
   (insert (propertize (make-string 70 ?─) 'face 'shadow) "\n"))
 
-(defun beads--insert-section-header (title count)
-  "Insert section header with TITLE and COUNT."
+(defun beads--insert-section-header (title count &optional may-have-more)
+  "Insert section header with TITLE and COUNT.
+If MAY-HAVE-MORE is non-nil, append '+' to indicate more items may exist."
   (insert (propertize title 'face 'bold))
   (when count
-    (insert (propertize (format " (%d)" count) 'face 'shadow)))
+    (insert (propertize (format " (%d%s)" count (if may-have-more "+" ""))
+                        'face 'shadow)))
   (insert "\n"))
 
 (defun beads--insert-issue-line (issue &optional show-status)
@@ -344,7 +352,9 @@ If SHOW-STATUS is non-nil, include status symbol."
     (insert "\n")
 
     ;; Ready Work section
-    (beads--insert-section-header "Ready Work" (length ready-issues))
+    (let ((may-have-more (and ready-issues
+                              (>= (length ready-issues) beads-ready-limit))))
+      (beads--insert-section-header "Ready Work" (length ready-issues) may-have-more))
     (if ready-issues
         (dolist (issue ready-issues)
           (beads--insert-issue-line issue))
@@ -628,10 +638,13 @@ Otherwise, looks for the beads-issue-id text property."
     (insert (propertize (format "Ready Work [%s]\n"
                                 (abbreviate-file-name (or project default-directory)))
                         'face 'bold))
-    (insert (propertize (format "Sorted by priority • %d %s ready\n"
-                                (length ready-issues)
-                                (if (= (length ready-issues) 1) "issue" "issues"))
-                        'face 'shadow))
+    (let ((count (length ready-issues))
+          (may-have-more (>= (length ready-issues) beads-ready-limit)))
+      (insert (propertize (format "Sorted by priority • %d%s %s ready\n"
+                                  count
+                                  (if may-have-more "+" "")
+                                  (if (= count 1) "issue" "issues"))
+                          'face 'shadow)))
     (beads--insert-separator)
     (insert "\n")
 
