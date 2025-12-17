@@ -126,6 +126,12 @@ Set to non-nil to automatically refresh every `beads-auto-refresh-interval' seco
         (when dir
           (expand-file-name dir)))))
 
+(defun beads--project-label (&optional project)
+  "Return abbreviated project label for buffer names."
+  (if project
+      (directory-file-name (abbreviate-file-name project))
+    "unknown"))
+
 (defun beads--run-command (command)
   "Run bd COMMAND and return output as string.
 Returns nil and displays error message if command fails."
@@ -566,12 +572,16 @@ Otherwise, looks for the beads-issue-id text property."
    (list (or (beads--issue-at-point)
              (read-string "Issue ID: "))))
   (when id
-    (let ((issue (beads--get-issue-by-id id)))
+    (let* ((project (beads--find-project-root))
+           (issue (beads--get-issue-by-id id))
+           (buf-name (format "*beads: %s [%s]*"
+                             id
+                             (beads--project-label project))))
       (if issue
-          (let ((buf (get-buffer-create (format "*beads: %s*" id))))
+          (let ((buf (get-buffer-create buf-name)))
             (with-current-buffer buf
               (beads-show-mode)
-              (setq beads--current-project (beads--find-project-root))
+              (setq beads--current-project project)
               (setq beads--current-issue-id id)
               (beads--render-detail-buffer issue))
             (pop-to-buffer buf))
@@ -581,14 +591,17 @@ Otherwise, looks for the beads-issue-id text property."
 (defun beads-status ()
   "Show Beads status buffer."
   (interactive)
-  (unless (beads--find-project-root)
-    (user-error "Not in a Beads project (no .beads/ directory found)"))
-  (let ((buf (get-buffer-create "*beads-status*")))
-    (with-current-buffer buf
-      (beads-status-mode)
-      (setq beads--current-project (beads--find-project-root))
-      (beads--render-status-buffer))
-    (pop-to-buffer buf)))
+  (let ((project (beads--find-project-root)))
+    (unless project
+      (user-error "Not in a Beads project (no .beads/ directory found)"))
+    (let* ((buf-name (format "*beads-status: %s*"
+                             (beads--project-label project)))
+           (buf (get-buffer-create buf-name)))
+      (with-current-buffer buf
+        (beads-status-mode)
+        (setq beads--current-project project)
+        (beads--render-status-buffer))
+      (pop-to-buffer buf))))
 
 (defun beads-quit ()
   "Quit current beads buffer."
@@ -618,14 +631,17 @@ Otherwise, looks for the beads-issue-id text property."
 (defun beads-ready ()
   "Show ready work buffer with focused view of ready issues."
   (interactive)
-  (unless (beads--find-project-root)
-    (user-error "Not in a Beads project (no .beads/ directory found)"))
-  (let ((buf (get-buffer-create "*beads-ready*")))
-    (with-current-buffer buf
-      (beads-ready-mode)
-      (setq beads--current-project (beads--find-project-root))
-      (beads--render-ready-buffer))
-    (pop-to-buffer buf)))
+  (let ((project (beads--find-project-root)))
+    (unless project
+      (user-error "Not in a Beads project (no .beads/ directory found)"))
+    (let* ((buf-name (format "*beads-ready: %s*"
+                             (beads--project-label project)))
+           (buf (get-buffer-create buf-name)))
+      (with-current-buffer buf
+        (beads-ready-mode)
+        (setq beads--current-project project)
+        (beads--render-ready-buffer))
+      (pop-to-buffer buf))))
 
 (defun beads--render-ready-buffer ()
   "Render the ready work buffer."
