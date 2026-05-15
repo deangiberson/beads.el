@@ -136,11 +136,21 @@ Set to non-nil to automatically refresh every `beads-auto-refresh-interval' seco
       (directory-file-name (abbreviate-file-name project))
     "unknown"))
 
+(defun beads--command-args (command)
+  "Normalize COMMAND into a list of bd argv strings."
+  (cond
+   ((null command) nil)
+   ((listp command) command)
+   ((stringp command) (split-string-and-unquote command))
+   (t (user-error "Invalid bd command args: %S" command))))
+
 (defun beads--run-command (command)
   "Run bd COMMAND and return output as string.
+COMMAND may be a list of argv strings or a shell-like string.
 Returns nil and displays error message if command fails."
   (let ((default-directory (or (beads--find-project-root)
-                               default-directory)))
+                               default-directory))
+        (args (beads--command-args command)))
     (condition-case err
         (with-temp-buffer
           (let ((stdout-buffer (current-buffer))
@@ -149,7 +159,7 @@ Returns nil and displays error message if command fails."
                 (let ((exit-code
                        (apply #'process-file "bd" nil
                               (list stdout-buffer stderr-file) nil
-                              (split-string-and-unquote command)))
+                              args))
                       (stdout "")
                       (stderr ""))
                   (setq stdout (string-trim-right (buffer-string)))
@@ -178,7 +188,9 @@ Returns nil and displays error message if command fails."
 (defun beads--run-json (command)
   "Run bd COMMAND and parse JSON output.
 Returns nil and displays error message if parsing fails."
-  (when-let* ((output (beads--run-command (format "%s --json" command))))
+  (when-let* ((output (beads--run-command
+                       (append (beads--command-args command)
+                               '("--json")))))
     (let* ((json-array-type 'list)
            (json-object-type 'alist)
            (json-false nil))
@@ -273,19 +285,20 @@ Returns nil and displays error message if parsing fails."
             (not beads--cache-time)
             (> (time-to-seconds (time-subtract (current-time) beads--cache-time))
                30))
-    (let ((data (beads--run-json "list --all")))
+    (let ((data (beads--run-json '("list" "--all"))))
       (setq beads--issues-cache (mapcar #'beads--parse-issue data)
             beads--cache-time (current-time))))
   beads--issues-cache)
 
 (defun beads--get-ready-issues ()
   "Get ready work issues."
-  (let ((data (beads--run-json (format "ready --limit %d" beads-ready-limit))))
+  (let ((data (beads--run-json
+               (list "ready" "--limit" (number-to-string beads-ready-limit)))))
     (mapcar #'beads--parse-issue data)))
 
 (defun beads--get-issue-by-id (id)
   "Get issue by ID."
-  (let ((data (beads--run-json (format "show %s" id))))
+  (let ((data (beads--run-json (list "show" id))))
     (when data
       ;; bd show returns an array with a single object, extract first element
       (beads--parse-issue (if (listp data) (car data) data)))))
