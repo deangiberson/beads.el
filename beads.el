@@ -676,7 +676,7 @@ Otherwise, looks for the beads-issue-id text property."
   (interactive)
   (if-let* ((id (beads--issue-at-point)))
       (progn
-        (beads--run-command (format "update %s --claim" id))
+        (beads--run-command (list "update" id "--claim"))
         (message "Started work on %s" id)
         (beads-refresh))
     (user-error "No issue at point")))
@@ -790,9 +790,8 @@ Otherwise, looks for the beads-issue-id text property."
 (defun beads-create-with-title (&optional args)
   "Create issue with ARGS from transient."
   (interactive (list (transient-args 'beads-create-transient)))
-  (let* ((title (read-string "Issue title: "))
-         (cmd (format "create \"%s\" %s" title (string-join args " "))))
-    (beads--run-command cmd)
+  (let ((title (read-string "Issue title: ")))
+    (beads--run-command (append (list "create" title) args))
     (message "Created issue: %s" title)
     (when (derived-mode-p 'beads-status-mode)
       (beads-refresh))))
@@ -818,7 +817,7 @@ Otherwise, looks for the beads-issue-id text property."
   "Set STATUS for issue at point."
   (if-let* ((id (beads--issue-at-point)))
       (progn
-        (beads--run-command (format "update %s --status %s" id status))
+        (beads--run-command (list "update" id "--status" status))
         (message "Set %s to %s" id status)
         (beads-refresh))
     (user-error "No issue at point")))
@@ -827,7 +826,8 @@ Otherwise, looks for the beads-issue-id text property."
   "Set PRIORITY for issue at point."
   (if-let* ((id (beads--issue-at-point)))
       (progn
-        (beads--run-command (format "update %s --priority %d" id priority))
+        (beads--run-command
+         (list "update" id "--priority" (number-to-string priority)))
         (message "Set %s priority to P%d" id priority)
         (beads-refresh))
     (user-error "No issue at point")))
@@ -837,7 +837,7 @@ Otherwise, looks for the beads-issue-id text property."
   (interactive)
   (if-let* ((id (beads--issue-at-point)))
       (let ((assignee (read-string "Assignee: ")))
-        (beads--run-command (format "update %s --assignee %s" id assignee))
+        (beads--run-command (list "update" id "--assignee" assignee))
         (message "Assigned %s to %s" id assignee)
         (beads-refresh))
     (user-error "No issue at point")))
@@ -847,7 +847,7 @@ Otherwise, looks for the beads-issue-id text property."
   (interactive)
   (if-let* ((id (beads--issue-at-point)))
       (let ((reason (read-string "Close reason: " "Completed")))
-        (beads--run-command (format "close %s --reason \"%s\"" id reason))
+        (beads--run-command (list "close" id "--reason" reason))
         (message "Closed %s" id)
         (beads-refresh))
     (user-error "No issue at point")))
