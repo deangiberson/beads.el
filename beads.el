@@ -28,6 +28,7 @@
 (require 'cl-lib)
 (require 'transient)
 (require 'json)
+(require 'subr-x)
 
 ;;; Customization
 
@@ -70,8 +71,11 @@ Set to a large number to show all ready issues."
 (defcustom beads-status-symbols
   '((open . "○")
     (in_progress . "◐")
-    (blocked . "◌")
-    (closed . "●"))
+    (blocked . "●")
+    (deferred . "❄")
+    (pinned . "📌")
+    (hooked . "◇")
+    (closed . "✓"))
   "Symbols for issue statuses."
   :type '(alist :key-type symbol :value-type string)
   :group 'beads)
@@ -138,10 +142,35 @@ Returns nil and displays error message if command fails."
   (let ((default-directory (or (beads--find-project-root)
                                default-directory)))
     (condition-case err
-        (let ((output (shell-command-to-string (format "bd %s 2>&1" command))))
-          (when (string-match-p "^Error:" output)
-            (user-error "bd command failed: %s" (string-trim output)))
-          output)
+        (with-temp-buffer
+          (let ((stdout-buffer (current-buffer))
+                (stderr-file (make-temp-file "beads-stderr-")))
+            (unwind-protect
+                (let ((exit-code
+                       (apply #'process-file "bd" nil
+                              (list stdout-buffer stderr-file) nil
+                              (split-string-and-unquote command)))
+                      (stdout "")
+                      (stderr ""))
+                  (setq stdout (string-trim-right (buffer-string)))
+                  (with-temp-buffer
+                    (insert-file-contents stderr-file)
+                    (setq stderr (string-trim (buffer-string))))
+                  (cond
+                   ((and (integerp exit-code) (zerop exit-code))
+                    (when (and (not (string-empty-p stderr))
+                               (not (string-empty-p stdout)))
+                      (message "bd warning: %s" stderr))
+                    (unless (string-empty-p stderr)
+                      (when (string-empty-p stdout)
+                        (message "bd warning: %s" stderr)))
+                    stdout)
+                   (t
+                    (user-error "bd command failed: %s"
+                                (if (string-empty-p stderr)
+                                    (format "exit code %s" exit-code)
+                                  stderr)))))
+              (delete-file stderr-file))))
       (error
        (message "Failed to run bd command: %s" (error-message-string err))
        nil))))
@@ -244,7 +273,7 @@ Returns nil and displays error message if parsing fails."
             (not beads--cache-time)
             (> (time-to-seconds (time-subtract (current-time) beads--cache-time))
                30))
-    (let ((data (beads--run-json "list")))
+    (let ((data (beads--run-json "list --all")))
       (setq beads--issues-cache (mapcar #'beads--parse-issue data)
             beads--cache-time (current-time))))
   beads--issues-cache)
@@ -322,6 +351,17 @@ If SHOW-STATUS is non-nil, include status symbol."
                 (string= (beads-issue-status issue) status))
               issues))
 
+(defun beads--insert-status-section (issues status title empty-message)
+  "Insert a status section for ISSUES matching STATUS using TITLE.
+Show EMPTY-MESSAGE when there are no matching issues."
+  (let ((matches (beads--filter-issues-by-status issues status)))
+    (beads--insert-section-header title (length matches))
+    (if matches
+        (dolist (issue matches)
+          (beads--insert-issue-line issue))
+      (insert (propertize empty-message 'face 'shadow)))
+    (insert "\n")))
+
 (defun beads--render-status-buffer ()
   "Render the main status buffer."
   (let ((inhibit-read-only t)
@@ -350,10 +390,17 @@ If SHOW-STATUS is non-nil, include status symbol."
                         (gethash "in_progress" by-status 0)))
         (insert (format "%d blocked | "
                         (gethash "blocked" by-status 0)))
-        (insert (format "P0:%d P1:%d P2:%d\n"
+        (insert (format "%d deferred | "
+                        (gethash "deferred" by-status 0)))
+        (insert (format "%d hooked | "
+                        (gethash "hooked" by-status 0)))
+        (insert (format "%d pinned | "
+                        (gethash "pinned" by-status 0)))
+        (insert (format "P0:%d P1:%d P2:%d Closed:%d\n"
                         (gethash 0 by-priority 0)
                         (gethash 1 by-priority 0)
-                        (gethash 2 by-priority 0)))
+                        (gethash 2 by-priority 0)
+                        (gethash "closed" by-status 0)))
         (insert "\n")))
     (insert "\n")
 
@@ -367,23 +414,17 @@ If SHOW-STATUS is non-nil, include status symbol."
       (insert (propertize "  (no ready work)\n" 'face 'shadow)))
     (insert "\n")
 
-    ;; In Progress section
-    (let ((in-progress (beads--filter-issues-by-status issues "in_progress")))
-      (beads--insert-section-header "In Progress" (length in-progress))
-      (if in-progress
-          (dolist (issue in-progress)
-            (beads--insert-issue-line issue))
-        (insert (propertize "  (nothing in progress)\n" 'face 'shadow)))
-      (insert "\n"))
-
-    ;; Blocked section
-    (let ((blocked (beads--filter-issues-by-status issues "blocked")))
-      (beads--insert-section-header "Blocked" (length blocked))
-      (if blocked
-          (dolist (issue blocked)
-            (beads--insert-issue-line issue))
-        (insert (propertize "  (no blocked issues)\n" 'face 'shadow)))
-      (insert "\n"))
+    ;; Additional status sections
+    (beads--insert-status-section issues "in_progress" "In Progress"
+                                  "  (nothing in progress)\n")
+    (beads--insert-status-section issues "blocked" "Blocked"
+                                  "  (no blocked issues)\n")
+    (beads--insert-status-section issues "hooked" "Hooked"
+                                  "  (no hooked issues)\n")
+    (beads--insert-status-section issues "deferred" "Deferred"
+                                  "  (no deferred issues)\n")
+    (beads--insert-status-section issues "pinned" "Pinned"
+                                  "  (no pinned issues)\n")
 
     ;; Recent Updates section (closed issues sorted by updated_at)
     (let* ((closed (beads--filter-issues-by-status issues "closed"))
@@ -618,11 +659,11 @@ Otherwise, looks for the beads-issue-id text property."
     (user-error "No issue at point")))
 
 (defun beads-start-work ()
-  "Start work on issue at point (set to in_progress and assign to self)."
+  "Start work on issue at point using Beads claim semantics."
   (interactive)
   (if-let* ((id (beads--issue-at-point)))
       (progn
-        (beads--run-command (format "update %s --status in_progress" id))
+        (beads--run-command (format "update %s --claim" id))
         (message "Started work on %s" id)
         (beads-refresh))
     (user-error "No issue at point")))
@@ -686,7 +727,8 @@ Otherwise, looks for the beads-issue-id text property."
                   (beads--insert-issue-line issue))
                 (insert "\n")))))
       (insert (propertize "  No ready work available.\n\n" 'face 'shadow))
-      (insert (propertize "  All issues either have blockers or are not in 'open' status.\n" 'face 'shadow)))
+      (insert (propertize "  Issues may be blocked, already claimed, deferred, hooked, or otherwise not claimable yet.\n"
+                          'face 'shadow)))
 
     ;; Footer
     (insert "\n")
